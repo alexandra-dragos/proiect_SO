@@ -135,6 +135,56 @@ int main(int argc, char* argv[])
       printf("raport id %d adaugat cu succes de %s\n", rap_nou.report_id, user);
     }
 
+  for(int i=0; i<argc; i++)
+    {
+      if(strcmp(argv[i], "--list")==0 && (i+1<argc))
+	{
+	  char* district_curent=argv[i+1];
+	  char cale_fisier[512];
+	  sprintf(cale_fisier, "%s/reports.dat", district_curent);
+
+	  struct stat file_info;
+	  if(stat(cale_fisier, &file_info)==-1)
+	    {
+	      printf("districtul %s nu exista sau nu are rapoarte\n", district_curent);
+	      continue;
+	    }
+	  printf("\nInformatii fisier %s:\n", cale_fisier);
+	  printf("marime in bytes: %ld\n", file_info.st_size);
+	  printf("permisiuni:\n");
+	  printf((file_info.st_mode & S_IRUSR) ? "r" : "-");
+	  printf((file_info.st_mode & S_IWUSR) ? "w" : "-");
+	  printf((file_info.st_mode & S_IXUSR) ? "x" : "-");
+	  printf((file_info.st_mode & S_IRGRP) ? "r" : "-");
+	  printf((file_info.st_mode & S_IWGRP) ? "w" : "-");
+	  printf((file_info.st_mode & S_IXGRP) ? "x" : "-");
+	  printf((file_info.st_mode & S_IROTH) ? "r" : "-");
+	  printf((file_info.st_mode & S_IWOTH) ? "w" : "-");
+	  printf((file_info.st_mode & S_IXOTH) ? "x" : "-");
+	  printf("\n");
+	  printf("data ultimei modificari: %ld\n", file_info.st_mtime);
+	  
+	  
+	  FILE* bin_file=fopen(cale_fisier, "rb");
+	  if(bin_file==NULL)
+	    {
+	      printf("nu s-a putut deschide fisierul\n");
+	      continue;
+	    }
+	  Report temp;
+	  printf("continut raport:\n");
+	  while(fread(&temp, sizeof(Report), 1, bin_file)==1)
+	    {
+	      char time_str[20];
+	      struct tm *tm_info=localtime(&temp.timestamp);
+	      strftime(time_str, 20, "%Y-%m-%d %H:%M", tm_info);
+	      printf("%d | %s | %s | %d | %s | %s\n", temp.report_id, temp.inspector_name, temp.issue_category, temp.severity, time_str, temp.description_text);
+	    }
+	  fclose(bin_file);
+	}
+    }
+  
+
   
   
   
