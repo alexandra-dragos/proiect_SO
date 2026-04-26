@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <dirent.h>
 
 typedef struct{
   int report_id;
@@ -17,11 +18,81 @@ typedef struct{
   char description_text[250];
 }Report;
 
+int parse_condition(const char *input, char *field, char *op, char *value) {
+    if (sscanf(input, "%[^:]:%[^:]:%s", field, op, value) == 3) {
+        return 1;
+    }
+    return 0;
+}
+
+int match_condition(Report *r, const char *field, const char *op, const char *value) {
+    if (strcmp(field, "severity") == 0) {
+        int val = atoi(value);
+        if (strcmp(op, "==") == 0) return r->severity == val;
+        if (strcmp(op, "!=") == 0) return r->severity != val;
+        if (strcmp(op, ">") == 0)  return r->severity > val;
+        if (strcmp(op, ">=") == 0) return r->severity >= val;
+        if (strcmp(op, "<") == 0)  return r->severity < val;
+        if (strcmp(op, "<=") == 0) return r->severity <= val;
+    } 
+    else if (strcmp(field, "category") == 0) {
+        if (strcmp(op, "==") == 0) return strcmp(r->issue_category, value) == 0;
+        if (strcmp(op, "!=") == 0) return strcmp(r->issue_category, value) != 0;
+    }
+    else if (strcmp(field, "inspector") == 0) {
+        if (strcmp(op, "==") == 0) return strcmp(r->inspector_name, value) == 0;
+        if (strcmp(op, "!=") == 0) return strcmp(r->inspector_name, value) != 0;
+    }
+    else if (strcmp(field, "timestamp") == 0) {
+        long val = atol(value);
+        if (strcmp(op, "==") == 0) return r->timestamp == val;
+        if (strcmp(op, ">") == 0)  return r->timestamp > val;
+        if (strcmp(op, "<") == 0)  return r->timestamp < val;
+    }
+    return 0;
+}
+
+
+void check_and_report_links() {
+    DIR *d = opendir(".");
+    if (!d) {
+        perror("nu s-a putut deschide directorul curent");
+        return;
+    }
+
+    struct dirent *dir;
+    struct stat st_link;
+    struct stat st_target;
+
+    printf("\nSCANARE LINK-URI SIMBOLICE\n");
+    
+    while ((dir = readdir(d)) != NULL)
+      {
+        if (strncmp(dir->d_name, "active_reports-", 15) == 0)
+	  {
+            if (lstat(dir->d_name, &st_link) == 0)
+	      {
+                if (S_ISLNK(st_link.st_mode))
+		  {
+                    if (stat(dir->d_name, &st_target) == -1) {
+                        printf("%s -> Destinatia este inexistenta sau inaccesibila!\n", dir->d_name);
+                    } else {
+                        printf("link valid: %s\n", dir->d_name);
+                    }
+                }
+            }
+        }
+    }
+    closedir(d);
+}
+
 int main(int argc, char* argv[])
 {
   char* role=NULL;
   char* user="unknown";
   char* district_name=NULL;
+
+  check_and_report_links();
 
   //extrag rolul, userul si numele districtului
   for(int i=0; i<argc; i++)
@@ -34,7 +105,7 @@ int main(int argc, char* argv[])
 	{
 	  user=argv[i+1];
 	}
-      if(strcmp(argv[i], "--add")==0 && (i+1<argc))
+      if((strcmp(argv[i], "--add")==0 || strcmp(argv[i], "--list")==0 || strcmp(argv[i], "--filter")==0 || strcmp(argv[i], "--view")==0) && (i+1<argc))
 	{
 	  district_name=argv[i+1];
 	}
@@ -46,7 +117,14 @@ int main(int argc, char* argv[])
       return 1;
     }
 
-  if(district_name!=NULL)
+  int vrea_sa_adauge=0;
+  for(int i=0; i<argc; i++)
+    {
+      if(strcmp(argv[i], "--add")==0)
+	vrea_sa_adauge=1;
+    }
+
+  if(vrea_sa_adauge==1 && district_name!=NULL)
     {
       struct stat st={0};
       char report_file[512];
@@ -67,6 +145,23 @@ int main(int argc, char* argv[])
 	  if(f_init !=NULL)
 	    fclose(f_init);
 	  chmod(report_file, 0664);
+	  
+	  char link_name[512];
+	  char target_path[512];
+
+	  sprintf(link_name, "active_reports-%s", district_name);
+	  sprintf(target_path, "%s/reports.dat", district_name);
+	  unlink(link_name);
+
+	  //link simbolic
+	  if (symlink(target_path, link_name) == 0)
+	    {
+	      printf("link simbolic creat: %s -> %s\n", link_name, target_path);
+	    }
+	  else
+	    {
+	      perror("nu s-a putut crea linkul\n");
+	    }
 
 	  //district.cfg
 	  char file_path[512];
@@ -153,6 +248,12 @@ int main(int argc, char* argv[])
 	    }
 	  printf("\nInformatii fisier %s:\n", cale_fisier);
 	  printf("marime in bytes: %ld\n", file_info.st_size);
+
+	  char mod_time_str[25];
+	  struct tm *tm_mod = localtime(&file_info.st_mtime);
+	  strftime(mod_time_str, sizeof(mod_time_str), "%Y-%m-%d %H:%M:%S", tm_mod);
+	  printf("data ultimei modificari: %s\n", mod_time_str);
+	  
 	  printf("permisiuni:\n");
 	  printf((file_info.st_mode & S_IRUSR) ? "r" : "-");
 	  printf((file_info.st_mode & S_IWUSR) ? "w" : "-");
@@ -164,7 +265,6 @@ int main(int argc, char* argv[])
 	  printf((file_info.st_mode & S_IWOTH) ? "w" : "-");
 	  printf((file_info.st_mode & S_IXOTH) ? "x" : "-");
 	  printf("\n");
-	  printf("data ultimei modificari: %ld\n", file_info.st_mtime);
 	  
 	  
 	  FILE* bin_file=fopen(cale_fisier, "rb");
@@ -299,6 +399,104 @@ int main(int argc, char* argv[])
 	    printf("raportul %d nu a fost gasit\n", target_id);
 	  }
 	  close(f);
+	}
+    }
+
+  for(int i=0; i<argc; i++)
+    {
+      if(strcmp(argv[i], "--update_threshold")==0 && (i+2<argc))
+	{
+	  char* district_id=argv[i+1];
+	  char* val=argv[i+2];
+	  char cfg_path[512];
+	  sprintf(cfg_path, "%s/district.cfg", district_id);
+
+	  //verificare rol
+	  if(role==NULL || strcmp(role, "manager")!=0)
+	    {
+	      printf("doar un manager poate schimba pragul de severitate\n");
+	      continue;
+	    }
+	  struct stat st;
+	  if(stat(cfg_path, &st)==-1)
+	    {
+	      printf("fisierul %s nu exista\n", cfg_path);
+	      continue;
+	    }
+	  mode_t permissions=st.st_mode & 0777;
+	  if(permissions != 0640){
+	    printf("permisiunile pt %s nu sunt 640\n", cfg_path);
+	    continue;
+	  }
+	  FILE* f_cfg=fopen(cfg_path, "w");
+	  if(f_cfg!=NULL)
+	    {
+	      fprintf(f_cfg, "%s\n", val);
+	      fclose(f_cfg);
+	      printf("pragul de severitate a fost actualizat pt %s la %s\n", district_id, val);
+	    }
+	  else{
+	    printf("nu s-a putut deschide fisierul\n");
+	  }
+	  i+=2;
+	}
+    }
+
+  for(int i=0; i<argc; i++)
+    {
+      if(strcmp(argv[i], "--filter")==0 && (i+2<argc))
+	{
+	  char* district_id=argv[i+1];
+	  int index_prima_conditie=i+2;
+	  int total_conditii=0;
+
+	  //aflu cate conditii sunt
+	  for(int j=index_prima_conditie; j<argc; j++)
+	    {
+	      if(strncmp(argv[j], "--", 2)==0)
+		break;
+	      total_conditii++;
+	    }
+	  char cale[512];
+	  sprintf(cale, "%s/reports.dat", district_id);
+	  int f=open(cale, O_RDONLY);
+	  if(f<0)
+	    {
+	      printf("eroare la deschiderea fisierului\n");
+	      continue;
+	    }
+	  Report temp;
+	  
+	  printf("rezultate pentru districtul %s\n", district_id);
+
+	  while(read(f, &temp, sizeof(Report))==sizeof(Report))
+	    {
+	      int potriviri=1;
+
+	      for(int j=0; j<total_conditii; j++)
+		{
+		  char camp[50];
+		  char op[10];
+		  char valoare[100];
+		  if(parse_condition(argv[index_prima_conditie+j], camp, op, valoare))
+		    {
+		      if(!match_condition(&temp, camp, op, valoare))
+			{
+			  potriviri=0;
+			  break;
+			}
+		    }
+		}
+	      if(potriviri==1)
+		{
+		  struct tm* tm_info=localtime(&temp.timestamp);
+		  char time_str[30];
+		  strftime(time_str, 20, "%Y-%m-%d %H:%M", tm_info);
+		  printf("ID: %d | Categorie: %s | Severitate: %d | nume insepctor: %s | data:%s\n", temp.report_id, temp.issue_category, temp.severity, temp.inspector_name, time_str);
+		}
+	    }
+	  close(f);
+	  i=i+(1+total_conditii);    //sar peste argumentele deja procesate
 	}
     }
   
