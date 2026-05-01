@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <sys/wait.h>
 
 typedef struct{
   int report_id;
@@ -499,7 +500,64 @@ int main(int argc, char* argv[])
 	  i=i+(1+total_conditii);    //sar peste argumentele deja procesate
 	}
     }
-  
+for(int i=0; i<argc; i++)
+    {
+      if(strcmp(argv[i], "--remove_district")==0 && (i+1<argc))
+	{
+	  char* district_id=argv[i+1];
+	  
+	  //verificare rol
+	  if(role==NULL || strcmp(role, "manager")!=0)
+	    {
+	      printf("doar managerul poate sterge directorul distriuctului %s\n", district_id);
+	    }
+
+	  //verificare daca este director
+	  struct stat st;
+	  if(stat(district_id, &st)==-1)
+	    {
+	      printf("nu s-a putut accesa districtul\n");
+	      continue;
+	    }
+	  if(!S_ISDIR(st.st_mode))
+	    {
+	      printf("%s nu este un director\n", district_id);
+	      continue;
+	    }
+	  char link_path[512];
+	  sprintf(link_path, "active_reports-%s", district_id);
+	  if((unlink(link_path))==0)
+	    {
+	      printf("s-a sters linkul simbolic %s\n", link_path);
+	    }
+	  else
+	    {
+	      printf("nu s-a putut sterge linkul simbolic\n");
+	    }
+	  
+	  int pid;
+	  if((pid=fork())<0)
+	    {
+	      perror("eroare\n");
+	      exit(1);
+	    }
+	  if(pid==0)
+	  {
+	    printf("STERGERE %s\n", district_id);
+	    execlp("rm","rm", "-rf", district_id, NULL);
+	    perror("eroare la execlp");
+	    exit(1);
+	  }
+	  else
+	    {
+	      wait(NULL);
+	      printf("districtul %s a fost sters\n", district_id);
+	    }
+	  i++;
+	  
+	}
+    }
+    
   
   
   return 0;
