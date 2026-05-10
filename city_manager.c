@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 typedef struct{
   int report_id;
@@ -230,8 +231,47 @@ int main(int argc, char* argv[])
 
       fclose(file);
       chmod(report_file, 0664);
-     
-    }
+
+      int pid=-1;
+      int trimitere_notificare=0;
+
+      FILE* f_monitor=fopen(".monitor_pid", "r");
+      if(f_monitor==NULL)
+	{
+	  printf("eroare la citirea din .monitor_pid\n");
+	}
+      else
+	{
+	  if(fscanf(f_monitor, "%d", &pid)==1)
+	    {
+	      if(kill(pid, SIGUSR1)==0)
+		{
+		  trimitere_notificare=1;
+		}
+	    }
+	  fclose(f_monitor);
+	}
+      
+      char log_path[512];
+      sprintf(log_path, "%s/logged_district", district_name);
+      FILE* file_log=fopen(log_path, "a");
+      if(file_log==NULL)
+	{
+	  printf("nu s-a putut scrie in %s/logged_district\n", district_name);
+	}
+      else
+	{
+	  if(trimitere_notificare==1)
+	    {
+	      fprintf(file_log,"Notificare trimisa monitorului. PID:%d\n",pid);
+	    }
+	  else
+	    {
+	      fprintf(file_log, "Notificarea nu a fost trimisa monitorului. PID:%d\n", pid);
+	    }
+	  fclose(file_log);
+	}
+  }
 
   for(int i=0; i<argc; i++)
     {
