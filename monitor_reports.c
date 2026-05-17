@@ -11,11 +11,13 @@ void gestionare_semnale(int semnal)
 {
   if(semnal==SIGUSR1)
     {
-      printf("s-a adaugat un nou raport in sistem\n");
+      printf("INFO:s-a adaugat un nou raport in sistem\n");
+      fflush(stdout);
     }
   else if(semnal==SIGINT)
     {
-      printf("oprire monitor_reports\n");
+      printf("INFO:oprire monitor_reports\n");
+      fflush(stdout);
       unlink(PID_FILE);
       exit(0);
     }
@@ -23,10 +25,29 @@ void gestionare_semnale(int semnal)
 
 int main(void)
 {
+  //verificare daca mai ruleaza deja alt monitor
+  FILE* file_verificare_monitor=fopen(PID_FILE, "r");
+  if(file_verificare_monitor!=NULL)
+    {
+      int pid_vechi;
+      if(fscanf(file_verificare_monitor, "%d", &pid_vechi)==1)
+	{
+	  if(kill(pid_vechi, 0)==0)
+	    {
+	      printf("EROARE: monitorul deja ruleaza cu PID-ul: %d\n", pid_vechi);
+	      fflush(stdout);
+	      fclose(file_verificare_monitor);
+	      return 1;
+	    }
+	}
+      fclose(file_verificare_monitor);
+    }
+  
   FILE* file=fopen(PID_FILE, "w");
   if(file==NULL)
     {
-      printf("eroare la deschiderea fisierului\n");
+      printf("EROARE:eroare la deschiderea fisierului\n");
+      fflush(stdout);
       return 1;
     }
   fprintf(file, "%d", getpid());
@@ -39,18 +60,18 @@ int main(void)
 
   if(sigaction(SIGUSR1, &sa, NULL)==-1)
     {
-      printf("nu s-a putut configura SIGUSR1\n");
+      printf("INFO:nu s-a putut configura SIGUSR1\n");
       return 1;
     }
 
   if(sigaction(SIGINT, &sa, NULL)==-1)
     {
-      printf("nu s-a putut configura SIGINT\n");
+      printf("INFO:nu s-a putut configura SIGINT\n");
       return 1;
     }
   
-  printf("monitor activat. PID: %d\n", getpid());
-
+  printf("INFO:monitor activat. PID: %d\n", getpid());
+  fflush(stdout);
 
   for(;;);
   
