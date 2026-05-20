@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#define MAX_DISTRICTS 30
 
 int citeste_linia(int fd, char* buffer, int max_len)
 {
@@ -29,7 +30,7 @@ int citeste_linia(int fd, char* buffer, int max_len)
 
 int main(void)
 {
-  char comanda[255];
+  char comanda[1024];
 
   while(1)
     {
@@ -124,6 +125,79 @@ int main(void)
 	    {
 	      printf("comanda start_monitor a fost trimisa in fundal\n");
 	    }
+	}
+      else if(strncmp(comanda, "calculate_scores",16)==0)
+	{
+	  char* districte[MAX_DISTRICTS];
+	  int nr_districte=0;
+
+	  //extragere fiecare district din lista de districte
+	  char* cuv=strtok(comanda, " ");
+	  cuv=strtok(NULL, " ,");
+
+	  while(cuv!=NULL && nr_districte<MAX_DISTRICTS)
+	    {
+	      districte[nr_districte]=cuv;
+	      nr_districte++;
+	      cuv=strtok(NULL, " ,");
+	    }
+	  if(nr_districte==0)
+	    {
+	      printf("Eroare: nu s-a specificat niciun district\n");
+	      continue;
+	    }
+	  int pipe_fds[MAX_DISTRICTS][2];
+	  pid_t pids[MAX_DISTRICTS];
+
+	  printf("\nWORKLOAD SCORE:\n");
+
+	  for(int i=0; i<nr_districte; i++)
+	    {
+	      if(pipe(pipe_fds[i])<0)
+		{
+		  perror("Eroare la crearea pipe ului pentru scorer\n");
+		  pids[i]=-1;
+		  continue;
+		}
+	      pids[i]=fork();
+	      if(pids[i]<0)
+		{
+		  perror("Eroare la creearea procesului copil\n");
+		  continue;
+		}
+	      else if(pids[i]==0)
+		{
+		  dup2(pipe_fds[i][1], STDOUT_FILENO);  //redirectionare STDOUT catre captul de scriere al pipeului
+
+		  close(pipe_fds[i][0]);
+		  close(pipe_fds[i][1]);
+
+		  execlp("./scorer", "scorer", districte[i], NULL);
+
+		  fprintf(stderr, "Eroare la executie scorer.c pentru districtul %s\n", districte[i]);
+		  exit(-1);
+		  
+		}
+	      else
+		{
+		  close(pipe_fds[i][1]);
+		}
+	    }
+	  for(int i=0; i<nr_districte; i++)
+	    {
+	      if(pids[i]>0)
+		{
+		  char buffer[1024];
+		  while(citeste_linia(pipe_fds[i][0], buffer, sizeof(buffer))>0)
+		    {
+		      printf("%s", buffer);
+		    }
+		  close(pipe_fds[i][0]);
+
+		  waitpid(pids[i], NULL, 0);
+		}
+	    }
+	  printf("\n");
 	}
       else if(strlen(comanda)>0)
 	{
