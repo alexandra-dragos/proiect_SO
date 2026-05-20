@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
 	{
 	  user=argv[i+1];
 	}
-      if((strcmp(argv[i], "--add")==0 || strcmp(argv[i], "--list")==0 || strcmp(argv[i], "--filter")==0 || strcmp(argv[i], "--view")==0) && (i+1<argc))
+      if((strcmp(argv[i], "--add")==0 || strcmp(argv[i], "--list")==0 || strcmp(argv[i], "--filter")==0 || strcmp(argv[i], "--view")==0 || strcmp(argv[i], "--remove_district")==0) && (i+1<argc))
 	{
 	  district_name=argv[i+1];
 	}
@@ -117,6 +117,24 @@ int main(int argc, char* argv[])
     {
       printf("nu s-a specificat niciun rol\n");
       return 1;
+    }
+
+  //logare actiuni
+  if(district_name!=NULL)
+    {
+      char log_general_path[512];
+      sprintf(log_general_path, "%s/logged_district", district_name);
+
+      FILE* f_log_general=fopen(log_general_path, "a");
+      if(f_log_general!=NULL)
+	{
+	  time_t timp=time(NULL);
+	  char* timp_str=ctime(&timp);
+	  timp_str[strcspn(time_str, "\n")]='\0';
+
+	  frpintf(f_log_district, "%s: User: %s | Role:%s | s-a initiat o actiune\n", timp_str, user, role);
+	  fclose(f_log_gen);
+	}
     }
 
   int vrea_sa_adauge=0;
