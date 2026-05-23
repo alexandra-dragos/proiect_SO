@@ -23,7 +23,7 @@ int main(int argc, char* argv[])
 {
   if(argc<2)
     {
-      fprintf(stderr, "nu s-a specificat niciun district\n");
+      printf("EROARE:nu s-a specificat niciun district\n");
       return 1;
     }
   char* district=argv[1];
@@ -33,7 +33,7 @@ int main(int argc, char* argv[])
   FILE* file=fopen(file_path, "rb");
   if(file==NULL)
     {
-      fprintf(stderr,"nu s-a putut deschide fisierul\n");
+      printf("EROARE:districtul %s nu are rapoarte sau fisierul lipseste\n", district);
       return 2;
     }
 
