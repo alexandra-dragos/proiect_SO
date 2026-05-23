@@ -27,6 +27,19 @@ int parse_condition(const char *input, char *field, char *op, char *value) {
     return 0;
 }
 
+int check_role_permissions(const char *path, const char *role, int write_operation) {
+    struct stat st;
+    if (stat(path, &st) == -1) {
+        return 1; // daca fisierul nu exista inca, lasam sa fie creat
+    }
+    if (strcmp(role, "manager") == 0) {
+        return write_operation ? ((st.st_mode & S_IWUSR) != 0) : ((st.st_mode & S_IRUSR) != 0);
+    } else if (strcmp(role, "inspector") == 0) {
+        return write_operation ? ((st.st_mode & S_IWGRP) != 0) : ((st.st_mode & S_IRGRP) != 0);
+    }
+    return 0;
+}
+
 int match_condition(Report *r, const char *field, const char *op, const char *value) {
     if (strcmp(field, "severity") == 0) {
         int val = atoi(value);
@@ -107,7 +120,7 @@ int main(int argc, char* argv[])
 	{
 	  user=argv[i+1];
 	}
-      if((strcmp(argv[i], "--add")==0 || strcmp(argv[i], "--list")==0 || strcmp(argv[i], "--filter")==0 || strcmp(argv[i], "--view")==0 || strcmp(argv[i], "--remove_district")==0) && (i+1<argc))
+      if((strcmp(argv[i], "--add")==0 || strcmp(argv[i], "--list")==0 || strcmp(argv[i], "--filter")==0 || strcmp(argv[i], "--view")==0 || strcmp(argv[i], "--remove_district")==0 || strcmp(argv[i], "--remove_report")==0 || strcmp(argv[i], "--update_threshold")==0) && (i+1<argc))
 	{
 	  district_name=argv[i+1];
 	}
@@ -119,11 +132,17 @@ int main(int argc, char* argv[])
       return 1;
     }
 
-  //logare actiuni
+  //logare actiuni + verificare permisiuni pe logged_district
   if(district_name!=NULL)
     {
       char log_general_path[512];
       sprintf(log_general_path, "%s/logged_district", district_name);
+
+      if(!check_role_permissions(log_general_path, role, 1))
+	{
+	  printf("Rolul %s nu are permisiuni de scriere in %s\n", role, log_general_path);
+	  return 1;
+	}
 
       FILE* f_log_general=fopen(log_general_path, "a");
       if(f_log_general!=NULL)
@@ -144,6 +163,7 @@ int main(int argc, char* argv[])
 	vrea_sa_adauge=1;
     }
 
+  //COMANDA ADD
   if(vrea_sa_adauge==1 && district_name!=NULL)
     {
       struct stat st={0};
@@ -203,7 +223,13 @@ int main(int argc, char* argv[])
 	      fclose(f3);
 	    }
 	  chmod(file_path, 0644);
-	  
+	}
+
+      //VERIFICARE BITI DIN reports.dat
+      if(!check_role_permissions(report_file, role, 1))
+	{
+	  printf("acces refuzat pentru %s\n", report_file);
+	  return 1;
 	}
       FILE* file=fopen(report_file, "ab");
       if(file==NULL)
@@ -221,7 +247,7 @@ int main(int argc, char* argv[])
       strncpy(rap_nou.inspector_name, user, 50);
 
       printf("categorie:");
-      scanf("%29s", rap_nou.issue_category);
+      scanf(" %29[^\n]", rap_nou.issue_category);
 
       printf("severitate:");
       scanf("%d", &rap_nou.severity);
@@ -250,6 +276,7 @@ int main(int argc, char* argv[])
       fclose(file);
       chmod(report_file, 0664);
 
+      //notificare monitor
       int pid=-1;
       int trimitere_notificare=0;
 
@@ -291,6 +318,7 @@ int main(int argc, char* argv[])
 	}
   }
 
+  //COMANDA LIST
   for(int i=0; i<argc; i++)
     {
       if(strcmp(argv[i], "--list")==0 && (i+1<argc))
@@ -345,7 +373,7 @@ int main(int argc, char* argv[])
 	}
     }
   
-
+  //COMANDA VIEW
   for(int i=0; i<argc; i++)
     {
       if(strcmp(argv[i], "--view")==0 && (i+2<argc))
@@ -354,6 +382,11 @@ int main(int argc, char* argv[])
 	  int target_id=atoi(argv[i+2]);
 	  char cale[512];
 	  sprintf(cale, "%s/reports.dat", district_id);
+
+	  if (!check_role_permissions(cale, role, 0)) {
+              printf("Acces vizualizare refuzat\n");
+              continue;
+          }
 
 	  struct stat file_info;
 	  if(stat(cale, &file_info)==-1)
@@ -396,10 +429,11 @@ int main(int argc, char* argv[])
 		}
 	    }
 	  fclose(file);
-	  i=i+2;
+	  
 	}
     }
 
+  //COMANDA REMOVE_REPORT
   for(int i=0; i<argc; i++)
     {
       if(strcmp(argv[i], "--remove_report")==0 && (i+2<argc))
@@ -407,23 +441,24 @@ int main(int argc, char* argv[])
 	  char* district_target=argv[i+1];
 	  int target_id=atoi(argv[i+2]);
 
-	  //verificare rol, doar managerul poate sterge
-	  if(role==NULL || strcmp(role, "manager")!=0)
-	    {
-	      printf("doar managerul poate sterge rapoarte\n");
-	      continue;
-	    }
+	 
 	  char cale[512];
 	  sprintf(cale, "%s/reports.dat", district_target);
+
+	  if (!check_role_permissions(cale, role, 1) || strcmp(role, "manager") != 0) {
+              printf("doar managerul are permisiuni de scriere/stergere!\n");
+              continue;
+          }
 	  int f=open(cale, O_RDWR);
 	  if(f<0)
 	    {
-	      printf("nu s-a putut deschide fisierul\n");
+	      perror("nu s-a putut deschide fisierul\n");
 	      continue;
 	    }
 	  Report temp;
 	  int gasit=0;
 	  long offset_sters=0;
+	  
 	  //caut raportul si salvez poz
 	  while(read(f, &temp, sizeof(Report))==sizeof(Report))
 	    {
@@ -437,17 +472,22 @@ int main(int argc, char* argv[])
 	  if(gasit==1)
 	    {
 	      //deplasez rapoartele de dupa cel de sters cu o pozitie in sus
-	      long offset_urmator=offset_sters+sizeof(Report);
 	      Report aux;
+	      long offset_citire=offset_sters+sizeof(Report);
+	     
 
-	      while(lseek(f, offset_urmator, SEEK_SET)>=0 && read(f, &aux, sizeof(Report))==sizeof(Report))
+	      while(lseek(f, offset_citire, SEEK_SET)>=0 && read(f, &aux, sizeof(Report))==sizeof(Report))
 		{
+		  //venim la poz libera si scriem datele noi
 		  lseek(f, offset_sters, SEEK_SET);
 		  write(f, &aux, sizeof(Report));
+		  
 		  //avansez pozitiile
 		  offset_sters+=sizeof(Report);
-		  offset_urmator+=sizeof(Report);
+		  offset_citire+=sizeof(Report);
 		}
+
+	      //eliminare structuri duplicate
 	      struct stat st;
 	      fstat(f, &st);
 	      ftruncate(f, st.st_size-sizeof(Report));
@@ -461,6 +501,7 @@ int main(int argc, char* argv[])
 	}
     }
 
+  //COMADA UPDATE_THRESHOLD
   for(int i=0; i<argc; i++)
     {
       if(strcmp(argv[i], "--update_threshold")==0 && (i+2<argc))
@@ -470,23 +511,22 @@ int main(int argc, char* argv[])
 	  char cfg_path[512];
 	  sprintf(cfg_path, "%s/district.cfg", district_id);
 
-	  //verificare rol
-	  if(role==NULL || strcmp(role, "manager")!=0)
-	    {
-	      printf("doar un manager poate schimba pragul de severitate\n");
-	      continue;
-	    }
 	  struct stat st;
-	  if(stat(cfg_path, &st)==-1)
+          if(stat(cfg_path, &st)==-1)
 	    {
 	      printf("fisierul %s nu exista\n", cfg_path);
 	      continue;
 	    }
-	  mode_t permissions=st.st_mode & 0777;
-	  if(permissions != 0640){
-	    printf("permisiunile pt %s nu sunt 640\n", cfg_path);
-	    continue;
-	  }
+
+          //verifica daca permisiunile sunt exact 640. 
+          if((st.st_mode & 0777) != 0640) {
+              printf("Permisiunile pentru %s nu sunt exact 640!\n", cfg_path);
+              continue;
+          }
+          if (strcmp(role, "manager") != 0) {
+              printf("Doar managerul are acces de scriere pe configuratie.\n");
+              continue;
+          }
 	  FILE* f_cfg=fopen(cfg_path, "w");
 	  if(f_cfg!=NULL)
 	    {
@@ -497,10 +537,11 @@ int main(int argc, char* argv[])
 	  else{
 	    printf("nu s-a putut deschide fisierul\n");
 	  }
-	  i+=2;
+	  
 	}
     }
 
+  //COMANDA FILTER
   for(int i=0; i<argc; i++)
     {
       if(strcmp(argv[i], "--filter")==0 && (i+2<argc))
@@ -518,6 +559,11 @@ int main(int argc, char* argv[])
 	    }
 	  char cale[512];
 	  sprintf(cale, "%s/reports.dat", district_id);
+
+	  if (!check_role_permissions(cale, role, 0)) {
+              printf("Filtrare respinsa: Lipsa drepturi de citire.\n");
+              continue;
+          }
 	  int f=open(cale, O_RDONLY);
 	  if(f<0)
 	    {
@@ -555,9 +601,11 @@ int main(int argc, char* argv[])
 		}
 	    }
 	  close(f);
-	  i=i+(1+total_conditii);    //sar peste argumentele deja procesate
+	 
 	}
     }
+
+  //COMANDA REMOVE_DISTRICT
 for(int i=0; i<argc; i++)
     {
       if(strcmp(argv[i], "--remove_district")==0 && (i+1<argc))
@@ -567,7 +615,8 @@ for(int i=0; i<argc; i++)
 	  //verificare rol
 	  if(role==NULL || strcmp(role, "manager")!=0)
 	    {
-	      printf("doar managerul poate sterge directorul distriuctului %s\n", district_id);
+	      printf("doar managerul poate sterge directorul districtului %s\n", district_id);
+	      continue;
 	    }
 
 	  //verificare daca este director
@@ -611,7 +660,7 @@ for(int i=0; i<argc; i++)
 	      wait(NULL);
 	      printf("districtul %s a fost sters\n", district_id);
 	    }
-	  i++;
+
 	  
 	}
     }
