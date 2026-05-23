@@ -130,10 +130,10 @@ int main(int argc, char* argv[])
 	{
 	  time_t timp=time(NULL);
 	  char* timp_str=ctime(&timp);
-	  timp_str[strcspn(time_str, "\n")]='\0';
+	  timp_str[strcspn(timp_str, "\n")]='\0';
 
-	  frpintf(f_log_district, "%s: User: %s | Role:%s | s-a initiat o actiune\n", timp_str, user, role);
-	  fclose(f_log_gen);
+	  fprintf(f_log_general, "%s: User: %s | Role:%s | s-a initiat o actiune\n", timp_str, user, role);
+	  fclose(f_log_general);
 	}
     }
 
