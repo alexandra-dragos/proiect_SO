@@ -34,6 +34,7 @@ int main(void)
 
   while(1)
     {
+      while(waitpid(-1, NULL, WNOHANG)>0);
       printf("city_hub ");
       fflush(stdout);
 
@@ -137,7 +138,7 @@ int main(void)
 
 	  while(cuv!=NULL && nr_districte<MAX_DISTRICTS)
 	    {
-	      districte[nr_districte]=cuv;
+	      districte[nr_districte]=strdup(cuv);
 	      nr_districte++;
 	      cuv=strtok(NULL, " ,");
 	    }
@@ -169,8 +170,12 @@ int main(void)
 		{
 		  dup2(pipe_fds[i][1], STDOUT_FILENO);  //redirectionare STDOUT catre captul de scriere al pipeului
 
-		  close(pipe_fds[i][0]);
-		  close(pipe_fds[i][1]);
+		  for(int j=0; j<=i; j++)
+		    {
+		      //inchidera tuturor descriptorilor
+		      close(pipe_fds[j][0]);
+		      close(pipe_fds[j][1]);
+		    }
 
 		  execlp("./scorer", "scorer", districte[i], NULL);
 
@@ -180,7 +185,7 @@ int main(void)
 		}
 	      else
 		{
-		  close(pipe_fds[i][1]);
+		  close(pipe_fds[i][1]);  //parintele inchide capatul de scriere
 		}
 	    }
 	  for(int i=0; i<nr_districte; i++)
@@ -193,9 +198,9 @@ int main(void)
 		      printf("%s", buffer);
 		    }
 		  close(pipe_fds[i][0]);
-
 		  waitpid(pids[i], NULL, 0);
 		}
+	      free(districte[i]);
 	    }
 	  printf("\n");
 	}
