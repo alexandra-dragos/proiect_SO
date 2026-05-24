@@ -21,22 +21,37 @@ typedef struct{
 }Report;
 
 int parse_condition(const char *input, char *field, char *op, char *value) {
-    if (sscanf(input, "%[^:]:%[^:]:%s", field, op, value) == 3) {
+    if (sscanf(input, "%[^:]:%[^:]:%s", field, op, value) == 3)
+      {
         return 1;
-    }
+      }
     return 0;
 }
 
 int check_role_permissions(const char *path, const char *role, int write_operation) {
     struct stat st;
-    if (stat(path, &st) == -1) {
+    if (stat(path, &st) == -1)
+      {
         return 1; // daca fisierul nu exista inca, lasam sa fie creat
-    }
-    if (strcmp(role, "manager") == 0) {
-        return write_operation ? ((st.st_mode & S_IWUSR) != 0) : ((st.st_mode & S_IRUSR) != 0);
-    } else if (strcmp(role, "inspector") == 0) {
-        return write_operation ? ((st.st_mode & S_IWGRP) != 0) : ((st.st_mode & S_IRGRP) != 0);
-    }
+      }
+    //managerul are drepturi de citire/scriere peste tot
+    if (strcmp(role, "manager") == 0)
+      {
+	return 1;
+      }
+
+    if(strcmp(role, "inspector")==0)
+      {
+	if(write_operation)
+	  {
+	    return (st.st_mode & S_IWGRP)!=0;  //inspectorul are voie sa scrie doar unde grupul are drept de scriere
+	  }
+	else
+	  {
+	    return (st.st_mode & S_IRGRP) !=0;  //verifica daca grupul(inspectorul) are drept la citire
+	  }
+      }
+    
     return 0;
 }
 
@@ -138,23 +153,29 @@ int main(int argc, char* argv[])
       char log_general_path[512];
       sprintf(log_general_path, "%s/logged_district", district_name);
 
-      if(!check_role_permissions(log_general_path, role, 1))
-	{
-	  printf("Rolul %s nu are permisiuni de scriere in %s\n", role, log_general_path);
-	  return 1;
-	}
+      struct stat st_log;
 
-      FILE* f_log_general=fopen(log_general_path, "a");
-      if(f_log_general!=NULL)
+      if(stat(log_general_path, &st_log)==0)
 	{
-	  time_t timp=time(NULL);
-	  char* timp_str=ctime(&timp);
-	  timp_str[strcspn(timp_str, "\n")]='\0';
+	  if(!check_role_permissions(log_general_path, role, 1))
+	    {
+	      printf("rolul %s nu are permisiuni de scriere in %s(ignoram logarea)\n", role, log_general_path);
+	    }
+	  else
+	    {
+	      FILE* f_log_general=fopen(log_general_path, "a");
+	      if(f_log_general!=NULL)
+		{
+		  time_t timp=time(NULL);
+		  char* timp_str=ctime(&timp);
+		  timp_str[strcspn(timp_str, "\n")]='\0';
 
-	  fprintf(f_log_general, "%s: User: %s | Role:%s | s-a initiat o actiune\n", timp_str, user, role);
-	  fclose(f_log_general);
+		  fprintf(f_log_general, "%s: user:%s | role: %s | s-a initializat o actiune\n", timp_str, user, role);
+		  fclose(f_log_general);
+		}
+	    }
 	}
-    }
+     }
 
   int vrea_sa_adauge=0;
   for(int i=0; i<argc; i++)
@@ -299,23 +320,33 @@ int main(int argc, char* argv[])
       
       char log_path[512];
       sprintf(log_path, "%s/logged_district", district_name);
-      FILE* file_log=fopen(log_path, "a");
-      if(file_log==NULL)
+
+      if(!check_role_permissions(log_path, role, 1))
 	{
-	  printf("nu s-a putut scrie in %s/logged_district\n", district_name);
+	  printf("roulul %s nu are dreptul de scriere in log. notificarea nu a fost trimisa\n", role);
 	}
       else
 	{
-	  if(trimitere_notificare==1)
+	  FILE* file_log=fopen(log_path, "a");
+	  if(file_log==NULL)
 	    {
-	      fprintf(file_log,"Notificare trimisa monitorului. PID:%d\n",pid);
+	      printf("nu s-a putut scrie in %s/logged_district\n", district_name);
 	    }
 	  else
 	    {
-	      fprintf(file_log, "Notificarea nu a fost trimisa monitorului. PID:%d\n", pid);
+	      if(trimitere_notificare==1)
+		{
+		  fprintf(file_log, "notificare trimisa monitorului. pid:%d\n", pid);
+		}
+	      else
+		{
+		  fprintf(file_log, "notificarea nu a fost trimisa monitorului. pid:%d\n", pid);
+		}
+	      fclose(file_log);
 	    }
-	  fclose(file_log);
 	}
+      
+      
   }
 
   //COMANDA LIST
@@ -412,6 +443,7 @@ int main(int argc, char* argv[])
 	  printf((file_info.st_mode & S_IROTH) ? "r" : "-");
 	  printf((file_info.st_mode & S_IWOTH) ? "w" : "-");
 	  printf((file_info.st_mode & S_IXOTH) ? "x" : "-");
+	  printf("\n");
 
 	  
 	  Report temp;
